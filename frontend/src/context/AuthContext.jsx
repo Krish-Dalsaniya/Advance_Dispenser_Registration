@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -22,7 +24,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (username, password) => {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -53,7 +55,8 @@ export function AuthProvider({ children }) {
   };
 
   const apiFetch = async (url, options = {}) => {
-    const res = await fetch(url, {
+    const fullUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
+    const res = await fetch(fullUrl, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
