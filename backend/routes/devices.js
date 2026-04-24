@@ -72,7 +72,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
     const firmwareId = firmware_id || null;
 
     const result = await pool.query(
-      `INSERT INTO device_registration (device_id, dispenser_id, sale_id, customer_id, model_id, firmware_id, serial_number,
+      `INSERT INTO device_registration (device_id, dispenser_id, sale_id, customer_id, model_id, firmware_version_id, serial_number,
        project_id, device_uid, iot_sim_no, imei_no, mac_address, installation_date, warranty_start, warranty_end, installed_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
        [device_id, dispenser_id, saleId, custId, modelId, firmwareId, serial_number,
@@ -106,7 +106,7 @@ router.put('/:id', authenticateToken, async (req, res, next) => {
     const firmwareId = firmware_id || null;
 
     const result = await pool.query(
-      `UPDATE device_registration SET dispenser_id=$1, sale_id=$2, customer_id=$3, model_id=$4, firmware_id=$5, serial_number=$6,
+      `UPDATE device_registration SET dispenser_id=$1, sale_id=$2, customer_id=$3, model_id=$4, firmware_version_id=$5, serial_number=$6,
        project_id=$7, device_uid=$8, iot_sim_no=$9, imei_no=$10, mac_address=$11,
        installation_date=$12, warranty_start=$13, warranty_end=$14, updated_at=CURRENT_TIMESTAMP
        WHERE device_id=$15 RETURNING *`,

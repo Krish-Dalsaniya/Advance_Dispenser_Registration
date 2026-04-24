@@ -1,0 +1,7 @@
+const pool = require('./config/db');
+async function check() {
+  const res = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'device_registration'");
+  console.log(res.rows.map(r => r.column_name).join(', '));
+  process.exit(0);
+}
+check();

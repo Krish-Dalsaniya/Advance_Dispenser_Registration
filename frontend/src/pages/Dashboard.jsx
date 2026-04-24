@@ -99,7 +99,7 @@ export default function Dashboard() {
               <p className="card-subtitle">Monthly revenue trends (₹K)</p>
             </div>
           </div>
-          <div className="chart-container" style={{ height: 300 }}>
+          <div className="chart-container" style={{ height: 300, minWidth: 0 }}>
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
@@ -159,7 +159,7 @@ export default function Dashboard() {
               <p className="card-subtitle">Monthly transaction frequency</p>
             </div>
           </div>
-          <div className="chart-container" style={{ height: 280 }}>
+          <div className="chart-container" style={{ height: 280, minWidth: 0 }}>
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
