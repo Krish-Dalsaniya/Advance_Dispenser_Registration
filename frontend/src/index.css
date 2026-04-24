@@ -4,23 +4,23 @@
    ============================================================ */
 
 :root {
-  /* Color Palette */
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #111827;
-  --bg-tertiary: #1a1f35;
-  --bg-card: rgba(17, 24, 39, 0.7);
-  --bg-card-hover: rgba(26, 31, 53, 0.9);
-  --bg-glass: rgba(255, 255, 255, 0.03);
-  --bg-input: rgba(255, 255, 255, 0.05);
+  /* Color Palette - Light Theme */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-card-hover: #ffffff;
+  --bg-glass: rgba(0, 0, 0, 0.03);
+  --bg-input: #ffffff;
 
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-light: rgba(255, 255, 255, 0.12);
-  --border-focus: rgba(41, 93, 141, 0.5);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-light: rgba(0, 0, 0, 0.12);
+  --border-focus: #295d8d;
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
   --text-muted: #64748b;
-  --text-accent: #e2e8f0;
+  --text-accent: #334155;
 
   /* Accent Colors */
   --accent-blue: #295d8d;
@@ -44,14 +44,13 @@
   --gradient-rose: linear-gradient(135deg, #f43f5e, #e11d48);
   --gradient-purple: linear-gradient(135deg, #8b5cf6, #7c3aed);
   --gradient-cyan: linear-gradient(135deg, #06b6d4, #0891b2);
-  --gradient-bg: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #1a1f35 100%);
+  --gradient-bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow-blue: 0 0 20px rgba(41, 93, 141, 0.15);
-  --shadow-glow-emerald: 0 0 20px rgba(16, 185, 129, 0.15);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --shadow-glow-blue: 0 0 20px rgba(41, 93, 141, 0.1);
 
   /* Spacing */
   --sidebar-width: 260px;
@@ -70,76 +69,18 @@
   --transition-slow: 400ms ease;
 }
 
-/* ============================================================
-   LIGHT THEME OVERRIDES
-   ============================================================ */
-
-.light-theme {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f1f5f9;
-  --bg-card: rgba(255, 255, 255, 0.8);
-  --bg-card-hover: rgba(255, 255, 255, 1);
-  --bg-glass: rgba(0, 0, 0, 0.03);
-  --bg-input: #ffffff;
-
-  --border-color: rgba(0, 0, 0, 0.08);
-  --border-light: rgba(0, 0, 0, 0.12);
-  --border-focus: #295d8d;
-
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --text-accent: #334155;
-
-  --gradient-bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
+.mobile-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 90;
+  animation: fadeIn var(--transition-base);
 }
 
-.light-theme .sidebar {
-  background: rgba(255, 255, 255, 0.9);
-  border-right-color: rgba(0, 0, 0, 0.05);
-}
-
-.light-theme .header {
-  background: rgba(255, 255, 255, 0.8);
-  border-bottom-color: rgba(0, 0, 0, 0.05);
-}
-
-.light-theme .nav-item:hover {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.light-theme .header-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.light-theme .header-user {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.light-theme .data-table th {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.light-theme .data-table td {
-  border-bottom-color: rgba(0, 0, 0, 0.03);
-}
-
-.light-theme .data-table tr:hover td {
-  background: rgba(0, 0, 0, 0.01);
-}
-
-.light-theme ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.light-theme ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.15);
-}
 
 /* ============================================================
    RESET & BASE
@@ -1218,7 +1159,7 @@ input, select, textarea {
 
 .tab:hover {
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .tab.active {
@@ -1269,13 +1210,13 @@ input, select, textarea {
   justify-content: space-between;
   padding: 10px 14px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
   transition: all var(--transition-fast);
 }
 
 .inventory-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: #F1F5F9;
 }
 
 .inventory-item .item-name {
@@ -1305,8 +1246,8 @@ input, select, textarea {
   justify-content: space-between;
   padding: 12px 14px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
 }
 
 .recent-item .item-info {
@@ -1386,7 +1327,7 @@ input, select, textarea {
 .animate-in:nth-child(6) { animation-delay: 250ms; }
 
 .loading-skeleton {
-  background: linear-gradient(90deg, var(--bg-glass) 25%, rgba(255,255,255,0.06) 50%, var(--bg-glass) 75%);
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-sm);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
@@ -48,8 +48,26 @@ function RoleProtectedRoute({ children, allowedRoles }) {
 
 function ProtectedLayout() {
   const { user, loading } = useAuth();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(window.innerWidth <= 768);
   const location = useLocation();
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) {
+        setSidebarCollapsed(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Close sidebar on navigation on mobile
+  useEffect(() => {
+    if (window.innerWidth <= 768) {
+      setSidebarCollapsed(true);
+    }
+  }, [location.pathname]);
 
   if (loading) {
     return (
@@ -67,6 +85,11 @@ function ProtectedLayout() {
 
   return (
     <div className="app-layout">
+      {/* Mobile Overlay */}
+      {!sidebarCollapsed && window.innerWidth <= 768 && (
+        <div className="mobile-overlay" onClick={() => setSidebarCollapsed(true)} />
+      )}
+      
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       <div className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <Header 

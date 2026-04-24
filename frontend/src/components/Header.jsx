@@ -1,10 +1,8 @@
-import { Search, Bell, LogOut, Sun, Moon, Menu, ChevronDown } from 'lucide-react';
+import { Search, Bell, LogOut, Menu, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 
 export default function Header({ collapsed, onToggle, title }) {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
 
   const initials = user
     ? `${(user.first_name || '')[0] || ''}${(user.last_name || '')[0] || ''}`.toUpperCase()
@@ -25,14 +23,6 @@ export default function Header({ collapsed, onToggle, title }) {
           <input type="text" placeholder="Search anything..." />
           <span className="search-hint">⌘K</span>
         </div>
-
-        <button 
-          className="header-btn" 
-          onClick={toggleTheme} 
-          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
 
         <button className="header-btn" title="Notifications">
           <Bell size={18} />
