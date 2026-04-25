@@ -72,8 +72,7 @@ function ProtectedLayoutContent() {
     if (window.innerWidth <= 768) {
       setSidebarCollapsed(true);
     }
-    setAction(null);
-  }, [location.pathname, setAction]);
+  }, [location.pathname]);
 
   if (loading) {
     return (
