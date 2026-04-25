@@ -16,6 +16,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState('6M');
 
   useEffect(() => {
@@ -28,9 +29,11 @@ export default function Dashboard() {
       if (res.ok) {
         const data = await res.json();
         setStats(data);
+        setError(null);
       }
     } catch (err) {
       console.error('Dashboard load error:', err);
+      setError(err.message || 'Failed to connect to server. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -42,6 +45,27 @@ export default function Dashboard() {
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   };
+
+  if (error) {
+    return (
+      <div className="dashboard-container">
+        <div className="card" style={{ padding: '40px', textAlign: 'center', maxWidth: '500px', margin: '40px auto' }}>
+          <div style={{ color: '#ef4444', marginBottom: '16px' }}>
+            <AlertCircle size={48} style={{ margin: '0 auto' }} />
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>Dashboard Error</h2>
+          <p style={{ color: '#6b7280', marginBottom: '24px' }}>{error}</p>
+          <button 
+            onClick={() => { setLoading(true); loadStats(); }}
+            className="btn btn-primary"
+            style={{ padding: '8px 24px' }}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

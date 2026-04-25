@@ -65,9 +65,10 @@ export function AuthProvider({ children }) {
       },
     });
 
+    // Handle unauthorized or invalid token
     if (res.status === 401) {
       logout();
-      throw new Error('Session expired');
+      throw new Error('Session expired. Please login again.');
     }
 
     if (!res.ok) {
