@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, ChevronUp, ChevronDown, Edit, Trash2, Eye } from 'lucide-react';
 
 export default function DataTable({
@@ -8,12 +8,19 @@ export default function DataTable({
   onDelete,
   onView,
   searchable = true,
+  selectable = false,
+  onSelectionChange,
+  expandable = false,
+  renderExpansion,
   pageSize = 10,
+  rowIdKey = 'id'
 }) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [expandedId, setExpandedId] = useState(null);
 
   const filtered = useMemo(() => {
     if (!search) return data;
@@ -48,6 +55,31 @@ export default function DataTable({
     }
   };
 
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const allIds = new Set(sorted.map(row => row[rowIdKey]));
+      setSelectedIds(allIds);
+      onSelectionChange && onSelectionChange(Array.from(allIds));
+    } else {
+      setSelectedIds(new Set());
+      onSelectionChange && onSelectionChange([]);
+    }
+  };
+
+  const handleSelectRow = (e, id) => {
+    e.stopPropagation();
+    const next = new Set(selectedIds);
+    if (e.target.checked) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+    onSelectionChange && onSelectionChange(Array.from(next));
+  };
+
+  const toggleExpand = (id) => {
+    if (!expandable) return;
+    setExpandedId(expandedId === id ? null : id);
+  };
+
   const getBadgeClass = (val, colKey) => {
     if (val === null || val === undefined) return '';
     const v = String(val).toLowerCase();
@@ -62,67 +94,68 @@ export default function DataTable({
     if (v === 'active' || v === 'true' || v === 'yes' || v === 'confirmed') return 'badge badge-active';
     if (v === 'inactive' || v === 'false' || v === 'no' || v === 'cancelled') return 'badge badge-inactive';
     if (v === 'pending') return 'badge badge-pending';
-    if (v === 'planning') return 'badge badge-planning';
-    if (v === 'completed') return 'badge badge-completed';
     return 'badge';
   };
 
-  const formatCell = (col, val) => {
+  const formatCell = (col, row) => {
+    const val = row[col.key];
+    if (col.render) return col.render(val, row);
+    
     if (val === null || val === undefined) return '—';
+
+    // UUID Handling
+    const isUuid = typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    if (isUuid) {
+      return (
+        <div className="uuid-cell" title="Click to copy" onClick={(e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(val);
+        }}>
+          {val.substring(0, 8)}
+          <span className="uuid-tooltip">{val}</span>
+        </div>
+      );
+    }
+
     if (col.badge || col.key === 'role_name' || col.key === 'role' || col.type === 'boolean') {
       const displayVal = col.type === 'boolean' ? (val ? 'Active' : 'Inactive') : val;
       const cls = getBadgeClass(val, col.key);
       return <span className={cls}>{String(displayVal)}</span>;
     }
-    if (col.type === 'date') {
+    
+    if (col.type === 'date' || col.type === 'datetime') {
       try {
-        return new Date(val).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-      } catch {
-        return val;
-      }
+        const opts = col.type === 'datetime' ? { hour: '2-digit', minute: '2-digit' } : {};
+        return new Date(val).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', ...opts });
+      } catch { return val; }
     }
-    if (col.type === 'datetime') {
-      try {
-        return new Date(val).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      } catch {
-        return val;
-      }
-    }
-    if (col.type === 'currency') {
-      return `₹${Number(val).toLocaleString('en-IN')}`;
-    }
-    // Boolean handled above in badge logic
+    
+    if (col.type === 'currency') return `₹${Number(val).toLocaleString('en-IN')}`;
+    
     return String(val);
   };
 
   return (
     <div className="table-container">
-      <div className="table-toolbar">
-        {searchable && (
-          <div className="table-search">
-            <Search className="search-icon" size={15} />
-            <input
-              type="text"
-              placeholder="Search records..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            />
-          </div>
-        )}
-        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {sorted.length} record{sorted.length !== 1 ? 's' : ''}
-        </span>
-      </div>
-
       <div className="table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
+              {selectable && (
+                <th className="checkbox-cell">
+                  <input 
+                    type="checkbox" 
+                    onChange={handleSelectAll}
+                    checked={sorted.length > 0 && selectedIds.size === sorted.length}
+                  />
+                </th>
+              )}
               {columns.map((col) => (
                 <th
                   key={col.key}
                   className={sortKey === col.key ? 'sorted' : ''}
                   onClick={() => handleSort(col.key)}
+                  style={{ width: col.width }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     {col.label}
@@ -132,45 +165,74 @@ export default function DataTable({
                   </span>
                 </th>
               ))}
-              {(onEdit || onDelete || onView) && <th>Actions</th>}
+              {(onEdit || onDelete || onView) && <th style={{ textAlign: 'right' }}>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {paged.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + 1} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                  No records found
+                <td colSpan={columns.length + (selectable ? 1 : 0) + 1} style={{ textAlign: 'center', padding: 48 }}>
+                  <div style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>No records found</div>
                 </td>
               </tr>
             ) : (
-              paged.map((row, idx) => (
-                <tr key={idx}>
-                  {columns.map((col) => (
-                    <td key={col.key}>{formatCell(col, row[col.key])}</td>
-                  ))}
-                  {(onEdit || onDelete || onView) && (
-                    <td>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {onView && (
-                          <button className="btn-icon" onClick={() => onView(row)} title="View">
-                            <Eye size={16} />
-                          </button>
-                        )}
-                        {onEdit && (
-                          <button className="btn-icon" onClick={() => onEdit(row)} title="Edit">
-                            <Edit size={16} />
-                          </button>
-                        )}
-                        {onDelete && (
-                          <button className="btn-icon danger" onClick={() => onDelete(row)} title="Delete">
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))
+              paged.map((row, idx) => {
+                const id = row[rowIdKey];
+                const isExpanded = expandedId === id;
+                return (
+                  <React.Fragment key={id || idx}>
+                    <tr 
+                      className={isExpanded ? 'expanded' : ''} 
+                      onClick={() => toggleExpand(id)}
+                      style={{ cursor: expandable ? 'pointer' : 'default' }}
+                    >
+                      {selectable && (
+                        <td className="checkbox-cell">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedIds.has(id)}
+                            onChange={(e) => handleSelectRow(e, id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </td>
+                      )}
+                      {columns.map((col) => (
+                        <td key={col.key}>{formatCell(col, row)}</td>
+                      ))}
+                      {(onEdit || onDelete || onView) && (
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                            {onView && (
+                              <button className="btn-icon" onClick={(e) => { e.stopPropagation(); onView(row); }} aria-label="View">
+                                <Eye size={16} />
+                              </button>
+                            )}
+                            {onEdit && (
+                              <button className="btn-icon" onClick={(e) => { e.stopPropagation(); onEdit(row); }} aria-label="Edit">
+                                <Edit size={16} />
+                              </button>
+                            )}
+                            {onDelete && (
+                              <button className="btn-icon danger" onClick={(e) => { e.stopPropagation(); onDelete(row); }} aria-label="Delete">
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    {isExpanded && renderExpansion && (
+                      <tr className="expansion-row">
+                        <td colSpan={columns.length + (selectable ? 1 : 0) + 1}>
+                          <div className="expansion-content">
+                            {renderExpansion(row)}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -178,29 +240,14 @@ export default function DataTable({
 
       {totalPages > 1 && (
         <div className="table-pagination">
-          <span>
+          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
             Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, sorted.length)} of {sorted.length}
           </span>
           <div className="pagination-btns">
             <button className="pagination-btn" disabled={page === 1} onClick={() => setPage(page - 1)}>
               Prev
             </button>
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              let p;
-              if (totalPages <= 5) p = i + 1;
-              else if (page <= 3) p = i + 1;
-              else if (page >= totalPages - 2) p = totalPages - 4 + i;
-              else p = page - 2 + i;
-              return (
-                <button
-                  key={p}
-                  className={`pagination-btn ${page === p ? 'active' : ''}`}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </button>
-              );
-            })}
+            <button className="pagination-btn active">{page}</button>
             <button className="pagination-btn" disabled={page === totalPages} onClick={() => setPage(page + 1)}>
               Next
             </button>

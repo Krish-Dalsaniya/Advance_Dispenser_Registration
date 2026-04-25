@@ -17,9 +17,13 @@ import OTAUpdates from './pages/OTAUpdates';
 import Products from './pages/Products';
 import Sales from './pages/Sales';
 import Projects from './pages/Projects';
+import ProjectDetail from './pages/ProjectDetail';
 import Devices from './pages/Devices';
+import DeviceDetail from './pages/DeviceDetail';
 import SiteLocations from './pages/SiteLocations';
 import SupportTickets from './pages/SupportTickets';
+import Settings from './pages/Settings';
+import { HeaderActionProvider, useHeaderAction } from './context/HeaderActionContext';
 const pageTitles = {
   '/dashboard': 'Dashboard',
   '/users': 'Users & Roles',
@@ -46,8 +50,9 @@ function RoleProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
-function ProtectedLayout() {
+function ProtectedLayoutContent() {
   const { user, loading } = useAuth();
+  const { action, setAction } = useHeaderAction();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(window.innerWidth <= 768);
   const location = useLocation();
 
@@ -62,16 +67,17 @@ function ProtectedLayout() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Close sidebar on navigation on mobile
+  // Close sidebar on navigation on mobile and reset header action
   useEffect(() => {
     if (window.innerWidth <= 768) {
       setSidebarCollapsed(true);
     }
-  }, [location.pathname]);
+    setAction(null);
+  }, [location.pathname, setAction]);
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-muted)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--color-text-muted)' }}>
         Loading...
       </div>
     );
@@ -96,8 +102,9 @@ function ProtectedLayout() {
           collapsed={sidebarCollapsed} 
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
           title={title} 
+          action={action}
         />
-        <div className="page-content">
+        <div className="page-content" key={location.pathname}>
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
             
@@ -154,10 +161,22 @@ function ProtectedLayout() {
                 <Projects />
               </RoleProtectedRoute>
             } />
+
+            <Route path="/projects/:id" element={
+              <RoleProtectedRoute allowedRoles={['Admin', 'Sales', 'Technician']}>
+                <ProjectDetail />
+              </RoleProtectedRoute>
+            } />
             
             <Route path="/devices" element={
               <RoleProtectedRoute allowedRoles={['Admin', 'Technician']}>
                 <Devices />
+              </RoleProtectedRoute>
+            } />
+
+            <Route path="/devices/:id" element={
+              <RoleProtectedRoute allowedRoles={['Admin', 'Technician']}>
+                <DeviceDetail />
               </RoleProtectedRoute>
             } />
 
@@ -173,11 +192,24 @@ function ProtectedLayout() {
               </RoleProtectedRoute>
             } />
 
+            <Route path="/settings" element={
+              <RoleProtectedRoute allowedRoles={['Admin', 'Sales', 'Technician', 'Engineer']}>
+                <Settings />
+              </RoleProtectedRoute>
+            } />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </div>
       </div>
     </div>
+  );
+}
+
+function ProtectedLayout() {
+  return (
+    <HeaderActionProvider>
+      <ProtectedLayoutContent />
+    </HeaderActionProvider>
   );
 }
 

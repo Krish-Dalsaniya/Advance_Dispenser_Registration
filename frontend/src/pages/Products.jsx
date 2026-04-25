@@ -1,27 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useHeaderAction } from '../context/HeaderActionContext';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
-import { Plus, Eye } from 'lucide-react';
-
-const columns = [
-  { key: 'product_id', label: 'ID' },
-  { key: 'product_name', label: 'Product Name' },
-  { key: 'model_name', label: 'Model' },
-  { key: 'dispenser_type', label: 'Type' },
-  { key: 'fuel_type', label: 'Fuel' },
-  { key: 'production_serial_no', label: 'Serial No' },
-  { key: 'manufacturing_batch', label: 'Batch' },
-  { key: 'entry_by_username', label: 'Created By' },
-  { key: 'entry_date_time', label: 'Created', type: 'datetime' },
-];
+import SlideOver from '../components/SlideOver';
+import EmptyState from '../components/EmptyState';
+import { 
+  Plus, Search, Box, Copy, ExternalLink, User, 
+  Clock, CheckCircle2, AlertTriangle, ArrowRight,
+  Cpu, Droplet, Monitor, ShieldCheck, Settings, Layers
+} from 'lucide-react';
 
 const COMPONENT_GROUPS = [
-  { id: 'basic', label: 'Basic Info' },
-  { id: 'electronics', label: 'Core Electronics' },
-  { id: 'fluid', label: 'Fluid Path' },
-  { id: 'peripherals', label: 'Peripherals' },
-  { id: 'sensors', label: 'Sensors & Safety' },
+  { id: 'basic', label: 'Basic Info', icon: Box },
+  { id: 'electronics', label: 'Electronics', icon: Cpu },
+  { id: 'fluid', label: 'Fluid Path', icon: Droplet },
+  { id: 'peripherals', label: 'Peripherals', icon: Monitor },
+  { id: 'sensors', label: 'Safety', icon: ShieldCheck },
 ];
 
 const COMPONENT_FIELDS = [
@@ -49,23 +45,54 @@ const COMPONENT_FIELDS = [
   { key: 'pressure_sensor_id', label: 'Pressure Sensor', type: 'pressure_sensor', category: 'sensors', sCol: 'pressure_sensor_serial_no' },
 ];
 
+function formatRelativeTime(date) {
+  if (!date) return '—';
+  const now = new Date();
+  const d = new Date(date);
+  const diff = now - d;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 7) return d.toLocaleDateString('en-IN');
+  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  return 'Just now';
+}
+
 export default function ProductsPage() {
   const { apiFetch } = useAuth();
+  const { setAction } = useHeaderAction();
+  const navigate = useNavigate();
+  
   const [data, setData] = useState([]);
   const [models, setModels] = useState([]);
   const [components, setComponents] = useState({});
+  const [devices, setDevices] = useState([]);
+  
   const [modal, setModal] = useState(false);
-  const [viewModal, setViewModal] = useState(false);
-  const [viewData, setViewData] = useState(null);
-  const [form, setForm] = useState({});
   const [editing, setEditing] = useState(null);
-  const [error, setError] = useState('');
+  const [form, setForm] = useState({});
   const [activeFormTab, setActiveFormTab] = useState('basic');
+  const [error, setError] = useState('');
+
+  // Details
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [modelFilter, setModelFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All');
+  const [fuelFilter, setFuelFilter] = useState('All');
 
   useEffect(() => { 
     load(); 
     loadModels();
     loadComponents();
+    loadDevices();
   }, []);
 
   const load = async () => {
@@ -82,7 +109,12 @@ export default function ProductsPage() {
     } catch(e) { console.error(e); }
   };
 
-
+  const loadDevices = async () => {
+    try {
+      const res = await apiFetch('/api/devices');
+      if (res.ok) setDevices(await res.json());
+    } catch(e) { console.error(e); }
+  };
 
   const loadComponents = async () => {
     const types = [...new Set(COMPONENT_FIELDS.map(f => f.type))];
@@ -91,165 +123,325 @@ export default function ProductsPage() {
       try {
         const res = await apiFetch(`/api/components/${type}`);
         if (res.ok) newComponents[type] = await res.json();
-      } catch (e) {
-        console.error(`Error loading ${type}:`, e);
-      }
+      } catch (e) { console.error(`Error loading ${type}:`, e); }
     }
     setComponents(newComponents);
   };
 
-  const openView = async (row) => {
-    try {
-      const res = await apiFetch(`/api/products/${row.product_id}`);
-      if (res.ok) {
-        setViewData(await res.json());
-        setViewModal(true);
-      }
-    } catch(e) { console.error(e); }
-  };
-
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setForm({ product_name: '', product_description: '', dispenser_model_id: '', production_serial_no: '', manufacturing_batch: '' });
     setError('');
     setEditing(null);
     setActiveFormTab('basic');
     setModal(true);
+  }, []);
+
+  useEffect(() => {
+    setAction(
+      <button className="btn btn-primary" onClick={openCreate}>
+        <Plus size={16} /> Add Product
+      </button>
+    );
+    return () => setAction(null);
+  }, [setAction, openCreate]);
+
+  const openDetails = async (product) => {
+    try {
+      const res = await apiFetch(`/api/products/${product.product_id}`);
+      if (res.ok) {
+        setSelectedProduct(await res.json());
+        setIsSlideOverOpen(true);
+      }
+    } catch(e) { console.error(e); }
   };
 
-  const openEdit = (row) => { 
-    setForm(row); 
-    setError('');
-    setEditing(row.product_id); 
-    setActiveFormTab('basic');
-    setModal(true); 
+  const handleCopy = (e, text) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    // Could add a toast here
   };
 
-  const handleDelete = async (row) => {
-    if (!confirm(`Delete product "${row.product_name}"?`)) return;
-    await apiFetch(`/api/products/${row.product_id}`, { method: 'DELETE' });
-    load();
-  };
+  const filteredData = useMemo(() => {
+    return data.filter(p => {
+      const searchStr = `${p.product_name} ${p.model_name} ${p.production_serial_no} ${p.manufacturing_batch}`.toLowerCase();
+      const matchesSearch = !search || searchStr.includes(search.toLowerCase());
+      const matchesModel = modelFilter === 'All' || p.model_name === modelFilter;
+      const matchesType = typeFilter === 'All' || p.dispenser_type === typeFilter;
+      const matchesFuel = fuelFilter === 'All' || p.fuel_type === fuelFilter;
+      return matchesSearch && matchesModel && matchesType && matchesFuel;
+    });
+  }, [data, search, modelFilter, typeFilter, fuelFilter]);
 
-  const handleSubmit = async () => {
+  const columns = [
+    { 
+      key: 'product_id', 
+      label: 'ID',
+      render: (val) => (
+        <div className="uuid-pill" onClick={(e) => handleCopy(e, val)} title="Click to copy full ID">
+          {val.substring(0, 8)}…
+          <Copy size={10} className="copy-icon" />
+        </div>
+      )
+    },
+    { 
+      key: 'product_name', 
+      label: 'Product Name',
+      render: (val, row) => (
+        <span className="product-name-cell" onClick={() => openDetails(row)}>{val}</span>
+      )
+    },
+    { 
+      key: 'model_name', 
+      label: 'Model',
+      render: (val, row) => (
+        <Link 
+          to="/dispenser-models" 
+          className="badge badge-engineer" 
+          style={{ textDecoration: 'none', cursor: 'pointer' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {val}
+        </Link>
+      )
+    },
+    { 
+      key: 'dispenser_type', 
+      label: 'Type',
+      render: (val) => <span className={`badge ${val === 'Mini' ? 'badge-admin' : 'badge-completed'}`}>{val}</span>
+    },
+    { 
+      key: 'fuel_type', 
+      label: 'Fuel',
+      render: (val) => <span className={`badge ${val === 'Diesel' ? 'badge-fuel-diesel' : 'badge-fuel-def'}`}>{val}</span>
+    },
+    { 
+      key: 'production_serial_no', 
+      label: 'Serial No',
+      render: (val) => <code style={{ fontSize: '12px' }}>{val || '—'}</code>
+    },
+    { 
+      key: 'manufacturing_batch', 
+      label: 'Batch',
+      render: (val) => <code style={{ fontSize: '11px' }}>{val || '—'}</code>
+    },
+    {
+      key: 'entry_by_username',
+      label: 'Created By',
+      render: (val) => (
+        <div className="user-avatar-stack">
+          <div className="avatar-initials">{val?.substring(0, 2).toUpperCase()}</div>
+          <span style={{ fontSize: '12px' }}>{val}</span>
+        </div>
+      )
+    },
+    {
+      key: 'entry_date_time',
+      label: 'Created At',
+      render: (val) => (
+        <span className="relative-date" title={new Date(val).toLocaleString()}>
+          {formatRelativeTime(val)}
+        </span>
+      )
+    }
+  ];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
       const url = editing ? `/api/products/${editing}` : '/api/products';
       await apiFetch(url, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(form) });
       setModal(false);
       load();
-    } catch (e) {
-      setError(e.message);
-    }
+    } catch (err) { setError(err.message); }
   };
 
   const onChange = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
-  const bomFields = [
-    { label: 'Motherboard', key: 'mb_serial' },
-    { label: 'GSM Module', key: 'gsm_serial' },
-    { label: 'Pump', key: 'pump_serial' },
-    { label: 'Solenoid Valve', key: 'solenoid_serial' },
-    { label: 'Flowmeter', key: 'flowmeter_serial' },
-    { label: 'Nozzle', key: 'nozzle_serial' },
-    { label: 'Filter', key: 'filter_serial' },
-    { label: 'SMPS', key: 'smps_serial' },
-    { label: 'Relay Box', key: 'relay_serial' },
-    { label: 'Transformer', key: 'transformer_serial' },
-    { label: 'EMI/EMC Filter', key: 'emi_serial' },
-    { label: 'Printer', key: 'printer_serial' },
-    { label: 'Battery', key: 'battery_serial' },
-    { label: 'Speaker', key: 'speaker_serial' },
-    { label: 'Amplifier', key: 'amplifier_serial' },
-    { label: 'Tank Sensor', key: 'tank_sensor_serial' },
-    { label: 'Quality Sensor', key: 'quality_sensor_serial' },
-    { label: 'RCCB', key: 'rccb_serial' },
-    { label: 'SPD', key: 'spd_serial' },
-    { label: 'Back Panel PCB', key: 'back_panel_serial' },
-    { label: 'DC Meter', key: 'dc_meter_serial' },
-    { label: 'Pressure Sensor', key: 'pressure_sensor_serial' },
-  ];
+  if (data.length === 0) {
+    return (
+      <EmptyState 
+        icon={Box}
+        title="No products assembled"
+        description="Physical dispenser units are created by assembling components based on model templates"
+        actionLabel="Start New Assembly"
+        onAction={openCreate}
+      />
+    );
+  }
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ marginBottom: '24px' }}>
         <div>
           <h1 className="page-title">Products</h1>
-          <p className="page-subtitle">Assembled dispenser product inventory</p>
+          <p className="page-subtitle">Manage your retail product catalog and pricing</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}><Plus size={16} /> Add Product</button>
       </div>
 
-      <DataTable columns={columns} data={data} onView={openView} onEdit={openEdit} onDelete={handleDelete} />
+      <div className="filter-bar">
+        <div className="filter-left">
+          <div className="search-container">
+            <Search className="search-icon" size={16} />
+            <input 
+              type="text" 
+              className="search-input" 
+              placeholder="Search by name, model, serial no…" 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="filter-chips">
+            <select className="filter-select" value={modelFilter} onChange={e => setModelFilter(e.target.value)}>
+              <option value="All">Model: All</option>
+              {models.map(m => <option key={m.dispenser_model_id} value={m.model_name}>{m.model_name}</option>)}
+            </select>
+            <select className="filter-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+              <option value="All">Type: All</option>
+              <option value="Mini">Mini</option>
+              <option value="Tower">Tower</option>
+              <option value="Storage">Storage</option>
+            </select>
+            <select className="filter-select" value={fuelFilter} onChange={e => setFuelFilter(e.target.value)}>
+              <option value="All">Fuel: All</option>
+              <option value="Diesel">Diesel</option>
+              <option value="DEF">DEF</option>
+            </select>
+          </div>
+        </div>
+        <div className="record-count">{filteredData.length} products</div>
+      </div>
 
-      {/* View Modal */}
-      <Modal isOpen={viewModal} onClose={() => setViewModal(false)} title="Product Details" width="800px">
-        {viewData && (
-          <div className="view-details-content">
-            <div className="section-title">General Information</div>
-            <div className="detail-row">
-              <div className="detail-item">
-                <span className="label">Product Name</span>
-                <span className="value">{viewData.product_name}</span>
+      <DataTable 
+        columns={columns} 
+        data={filteredData}
+        expandable
+        renderExpansion={(row) => {
+          const isRegistered = devices.some(d => d.product_id === row.product_id);
+          const device = devices.find(d => d.product_id === row.product_id);
+          
+          return (
+            <div className="expansion-grid">
+              <div className="expansion-section">
+                <div className="expansion-section-title">Deployment Status</div>
+                {isRegistered ? (
+                  <div className="expansion-link-item" onClick={() => navigate('/devices')}>
+                    <CheckCircle2 size={16} color="#10b981" />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '13px' }}>Registered as Device</div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>Device ID: {device.device_id.substring(0, 8)}…</div>
+                    </div>
+                    <ArrowRight size={14} style={{ marginLeft: 'auto' }} />
+                  </div>
+                ) : (
+                  <button className="btn btn-primary btn-sm" style={{ width: '100%', justifyContent: 'center' }} onClick={() => navigate('/devices')}>
+                    Register as Device <ArrowRight size={14} style={{ marginLeft: '8px' }} />
+                  </button>
+                )}
+                <div className="expansion-field" style={{ marginTop: '16px' }}>
+                  <span className="expansion-label">Full Product ID</span>
+                  <div className="uuid-pill" onClick={(e) => handleCopy(e, row.product_id)}>
+                    {row.product_id}
+                    <Copy size={10} className="copy-icon" />
+                  </div>
+                </div>
               </div>
-              <div className="detail-item">
-                <span className="label">Model</span>
-                <span className="value">{viewData.model_name} ({viewData.fuel_type})</span>
+
+              <div className="expansion-section">
+                <div className="expansion-section-title">Linked Resources</div>
+                <div className="expansion-link-item" onClick={() => navigate('/firmware-versions')}>
+                  <Layers size={16} color="#0f4c81" />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '13px' }}>Firmware Build</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Latest stable version available</div>
+                  </div>
+                  <ExternalLink size={14} style={{ marginLeft: 'auto' }} />
+                </div>
+                {device?.site_name && (
+                  <div className="expansion-link-item" onClick={() => navigate('/site-locations')}>
+                    <Settings size={16} color="#0f4c81" />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '13px' }}>Installed at {device.site_name}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>{device.customer_name}</div>
+                    </div>
+                    <ExternalLink size={14} style={{ marginLeft: 'auto' }} />
+                  </div>
+                )}
               </div>
-              <div className="detail-item">
-                <span className="label">Serial Number</span>
-                <span className="value">{viewData.production_serial_no}</span>
-              </div>
-              <div className="detail-item">
-                <span className="label">Batch</span>
-                <span className="value">{viewData.manufacturing_batch}</span>
+            </div>
+          );
+        }}
+        onEdit={(row) => {
+          setForm(row);
+          setEditing(row.product_id);
+          setModal(true);
+        }}
+        onDelete={async (row) => {
+          if (!confirm(`Delete product "${row.product_name}"?`)) return;
+          await apiFetch(`/api/products/${row.product_id}`, { method: 'DELETE' });
+          load();
+        }}
+      />
+
+      <SlideOver
+        isOpen={isSlideOverOpen}
+        onClose={() => setIsSlideOverOpen(false)}
+        title="Product Assembly Details"
+        width="640px"
+      >
+        {selectedProduct && (
+          <div className="product-detail-content">
+            <div className="detail-section">
+              <div className="detail-section-title">Hardware Architecture</div>
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div className="expansion-field">
+                  <span className="expansion-label">Model Series</span>
+                  <span className="expansion-value" style={{ fontWeight: 600 }}>{selectedProduct.model_name}</span>
+                </div>
+                <div className="expansion-field">
+                  <span className="expansion-label">Serial Number</span>
+                  <span className="expansion-value">{selectedProduct.production_serial_no || 'Not Assigned'}</span>
+                </div>
+                <div className="expansion-field">
+                  <span className="expansion-label">Manufacturing Date</span>
+                  <span className="expansion-value">{selectedProduct.manufacturing_date_time ? new Date(selectedProduct.manufacturing_date_time).toLocaleDateString() : '—'}</span>
+                </div>
+                <div className="expansion-field">
+                  <span className="expansion-label">Batch Code</span>
+                  <span className="expansion-value">{selectedProduct.manufacturing_batch || '—'}</span>
+                </div>
               </div>
             </div>
 
-            <div className="section-title" style={{ marginTop: 24 }}>Bill of Materials (BOM)</div>
-            <div className="bom-grid">
-              {bomFields.map(field => (
-                <div key={field.key} className="bom-item">
-                  <span className="bom-label">{field.label}</span>
-                  <span className={`bom-value ${viewData[field.key] ? '' : 'missing'}`}>
-                    {viewData[field.key] || 'Not Assigned'}
-                  </span>
+            <div className="detail-section">
+              <div className="detail-section-title">Bill of Materials (BOM)</div>
+              {COMPONENT_GROUPS.slice(1).map(group => (
+                <div key={group.id} style={{ marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#0f4c81' }}>
+                    <group.icon size={16} />
+                    <span style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>{group.label}</span>
+                  </div>
+                  <div className="bom-stack" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {COMPONENT_FIELDS.filter(f => f.category === group.id).map(field => {
+                      const serial = selectedProduct[`${field.type}_serial`];
+                      return (
+                        <div key={field.key} className="linked-item" style={{ padding: '8px 12px' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{field.label}</div>
+                            <div style={{ fontSize: '13px', fontWeight: 500 }}>{serial || <span style={{ color: '#ef4444', fontStyle: 'italic', fontWeight: 400 }}>Not Assigned</span>}</div>
+                          </div>
+                          {serial && <CheckCircle2 size={14} color="#10b981" />}
+                          {!serial && <AlertTriangle size={14} color="#f59e0b" />}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: 24 }}>
-              {viewData.features?.length > 0 && (
-                <div>
-                  <div className="section-title">Features</div>
-                  <div className="list-items">
-                    {viewData.features.map(f => (
-                      <div key={f.feature_id} className="inventory-item">
-                        <span className="item-name">{f.feature_name}</span>
-                        <span className="item-desc">{f.feature_description}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {viewData.specifications?.length > 0 && (
-                <div>
-                  <div className="section-title">Specifications</div>
-                  <div className="list-items">
-                    {viewData.specifications.map(s => (
-                      <div key={s.spec_id} className="inventory-item">
-                        <span className="item-name">{s.spec_name}</span>
-                        <span className="item-count">{s.spec_value} {s.spec_unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         )}
-      </Modal>
+      </SlideOver>
 
-      {/* Create/Edit Modal */}
       <Modal 
         isOpen={modal} 
         onClose={() => setModal(false)} 
@@ -268,6 +460,7 @@ export default function ProductsPage() {
               className={`tab ${activeFormTab === g.id ? 'active' : ''}`}
               onClick={() => setActiveFormTab(g.id)}
             >
+              <g.icon size={14} style={{ marginRight: '8px' }} />
               {g.label}
             </button>
           ))}
@@ -335,22 +528,7 @@ export default function ProductsPage() {
           ))}
         </div>
       </Modal>
-
-      <style>{`
-        .view-details-content { padding: 8px; }
-        .section-title { font-size: 0.85rem; font-weight: 600; color: var(--accent-blue-light); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 16px; }
-        .detail-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
-        .detail-item { display: flex; flex-direction: column; gap: 4px; }
-        .detail-item .label { font-size: 0.75rem; color: var(--text-muted); }
-        .detail-item .value { font-size: 0.9rem; color: var(--text-main); font-weight: 500; }
-        .bom-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-        .bom-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); }
-        .bom-label { font-size: 0.8rem; color: var(--text-muted); }
-        .bom-value { font-size: 0.85rem; color: var(--accent-blue-light); font-weight: 500; }
-        .bom-value.missing { color: #e74c3c; opacity: 0.5; font-style: italic; font-weight: 400; }
-        .list-items { display: flex; flex-direction: column; gap: 8px; }
-        .item-desc { font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 2px; }
-      `}</style>
     </div>
   );
 }
+

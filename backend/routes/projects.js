@@ -57,25 +57,94 @@ router.post('/', authorizeRoles('Admin', 'Sales'), async (req, res, next) => {
     const { project_name, customer_id, project_type, status, start_date, end_date, description } = req.body;
     const project_id = uuidv4();
 
+    // Ultra-robust sanitization for Postgres
+    const clean = (val) => {
+      if (val === "" || val === undefined || val === null || (typeof val === "string" && val.trim() === "")) {
+        return null;
+      }
+      return val;
+    };
+
+    // Ensure status matches the database CHECK constraint
+    const sanitizedStatus = (status || "planning").toLowerCase().replace(" ", "_");
+    
+    // Resolve valid User ID from database to prevent FK issues with stale tokens
+    let dbUserId = req.user.user_id;
+    const userRes = await pool.query('SELECT user_id FROM user_master WHERE LOWER(username) = LOWER($1)', [req.user.username]);
+    if (userRes.rows.length > 0) {
+      dbUserId = userRes.rows[0].user_id;
+    } else {
+      console.error("USER NOT FOUND IN DB:", req.user.username);
+      return res.status(401).json({ error: "Your account could not be verified. Please log in again." });
+    }
+
+    const args = [
+      project_id,
+      project_name,
+      clean(customer_id),
+      project_type || "New Installation",
+      sanitizedStatus,
+      clean(start_date),
+      clean(end_date),
+      clean(description),
+      dbUserId
+    ];
+
+    console.log("Saving Project with Args:", args);
+
+    // Verify customer exists if provided (skip check if empty)
+    const activeCustId = clean(customer_id);
+    if (activeCustId) {
+      const custCheck = await pool.query('SELECT customer_id FROM customer_master WHERE customer_id = $1', [activeCustId]);
+      if (custCheck.rows.length === 0) {
+        console.error("CRITICAL: CUSTOMER ID NOT FOUND:", activeCustId);
+        return res.status(400).json({ 
+          error: `The selected customer (ID: ${activeCustId}) no longer exists in the system. Please refresh the page and select a valid customer.` 
+        });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO project_master (project_id, project_name, customer_id, project_type, status, start_date, end_date, description, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [project_id, project_name, customer_id, project_type, status || 'active', start_date, end_date, description, req.user.username]
+      args
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    next(err);
+    console.error("CRITICAL PROJECT ERROR:", err.message);
+    res.status(400).json({ 
+      error: `Database Error: ${err.message}. Data sent: [${args.join(', ')}]` 
+    });
   }
 });
 
 // PUT /api/projects/:id
-router.put('/:id', authorizeRoles('Admin', 'Sales'), async (req, res, next) => {
+router.put("/:id", authorizeRoles("Admin", "Sales"), async (req, res, next) => {
   try {
     const { project_name, customer_id, project_type, status, start_date, end_date, description } = req.body;
+    
+    const clean = (val) => {
+      if (val === "" || val === undefined || val === null || (typeof val === "string" && val.trim() === "")) {
+        return null;
+      }
+      return val;
+    };
+
+    const args = [
+      project_name,
+      clean(customer_id),
+      project_type,
+      status,
+      clean(start_date),
+      clean(end_date),
+      clean(description),
+      req.params.id
+    ];
+
     const result = await pool.query(
       `UPDATE project_master SET project_name=$1, customer_id=$2, project_type=$3, status=$4, start_date=$5, end_date=$6, description=$7
        WHERE project_id=$8 RETURNING *`,
-      [project_name, customer_id, project_type, status, start_date, end_date, description, req.params.id]
+      args
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     res.json(result.rows[0]);

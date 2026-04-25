@@ -1,33 +1,69 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useHeaderAction } from '../context/HeaderActionContext';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
-import { Plus } from 'lucide-react';
+import SlideOver from '../components/SlideOver';
+import EmptyState from '../components/EmptyState';
+import { 
+  Plus, Search, ShoppingCart, Clock, CheckCircle2, 
+  XCircle, Package, Truck, Receipt, Printer, FileText,
+  Building2, User, ExternalLink, Trash2, Edit2, Info
+} from 'lucide-react';
 
-const columns = [
-  { key: 'sales_id', label: 'Order ID' },
-  { key: 'customer_name', label: 'Customer' },
-  { key: 'company_name', label: 'Company' },
-  { key: 'order_date', label: 'Order Date', type: 'date' },
-  { key: 'po_number', label: 'PO Number' },
-  { key: 'status', label: 'Status', badge: true },
-  { key: 'created_at', label: 'Created', type: 'datetime' },
-];
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(amount);
+}
+
+function formatRelativeTime(date) {
+  if (!date) return '—';
+  const now = new Date();
+  const d = new Date(date);
+  const diff = now - d;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 7) return d.toLocaleDateString('en-IN');
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return 'Just now';
+}
 
 export default function SalesPage() {
   const { apiFetch } = useAuth();
+  const { setAction } = useHeaderAction();
+  const navigate = useNavigate();
+
   const [data, setData] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  
+  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
-  const [viewModal, setViewModal] = useState(false);
-  const [viewData, setViewData] = useState(null);
+  const [error, setError] = useState('');
+  
+  // Details
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
+
   const [form, setForm] = useState({ 
-    customer_id: '', order_date: '', po_number: '', remarks: '', status: 'pending', 
+    customer_id: '', order_date: '', po_number: '', remarks: '', status: 'draft', 
     total_amount: 0, tax_amount: 0, discount_amount: 0, items: [] 
   });
   const [editing, setEditing] = useState(null);
-  const [error, setError] = useState('');
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [customerFilter, setCustomerFilter] = useState('All');
 
   useEffect(() => { load(); loadCustomers(); loadProducts(); }, []);
 
@@ -36,6 +72,7 @@ export default function SalesPage() {
       const res = await apiFetch('/api/sales');
       if (res.ok) setData(await res.json());
     } catch(e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
   const loadCustomers = async () => {
@@ -52,16 +89,9 @@ export default function SalesPage() {
     } catch(e) { console.error(e); }
   };
 
-  const openView = async (row) => {
-    try {
-      const res = await apiFetch(`/api/sales/${row.sales_id}`);
-      if (res.ok) { setViewData(await res.json()); setViewModal(true); }
-    } catch(e) { console.error(e); }
-  };
-
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setForm({ 
-      customer_id: '', order_date: '', po_number: '', remarks: '', status: 'pending', 
+      customer_id: '', order_date: new Date().toISOString().split('T')[0], po_number: '', remarks: '', status: 'draft', 
       total_amount: 0, tax_amount: 0, discount_amount: 0, 
       items: [{ 
         product_id: '', quantity: 1, unit_price: '', 
@@ -75,245 +105,354 @@ export default function SalesPage() {
     setError('');
     setEditing(null);
     setModal(true);
+  }, []);
+
+  useEffect(() => {
+    setAction(
+      <button className="btn btn-primary" onClick={openCreate}>
+        <Plus size={16} /> New Order
+      </button>
+    );
+    return () => setAction(null);
+  }, [setAction, openCreate]);
+
+  const openDetails = async (order) => {
+    try {
+      const res = await apiFetch(`/api/sales/${order.sales_id}`);
+      if (res.ok) {
+        setSelectedOrder(await res.json());
+        setIsSlideOverOpen(true);
+      }
+    } catch(e) { console.error(e); }
   };
 
-  const openEdit = (row) => { setForm(row); setError(''); setEditing(row.sales_id); setModal(true); };
-
-  const handleDelete = async (row) => {
-    if (!confirm('Delete this order?')) return;
-    await apiFetch(`/api/sales/${row.sales_id}`, { method: 'DELETE' });
-    load();
+  const handleCancelOrder = async (e, order) => {
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to cancel Order ${order.sales_id}?`)) return;
+    try {
+      await apiFetch(`/api/sales/${order.sales_id}`, { 
+        method: 'PUT', 
+        body: JSON.stringify({ ...order, status: 'cancelled' }) 
+      });
+      load();
+    } catch (err) { console.error(err); }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
       const url = editing ? `/api/sales/${editing}` : '/api/sales';
       await apiFetch(url, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(form) });
       setModal(false);
       load();
-    } catch (e) {
-      setError(e.message);
+    } catch (err) { setError(err.message); }
+  };
+
+  const filteredData = useMemo(() => {
+    return data.filter(o => {
+      const searchStr = `${o.sales_id} ${o.customer_name} ${o.company_name} ${o.po_number}`.toLowerCase();
+      const matchesSearch = !search || searchStr.includes(search.toLowerCase());
+      const matchesStatus = statusFilter === 'All' || o.status === statusFilter;
+      const matchesCustomer = customerFilter === 'All' || o.customer_name === customerFilter;
+      return matchesSearch && matchesStatus && matchesCustomer;
+    });
+  }, [data, search, statusFilter, customerFilter]);
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return {
+      total: data.length,
+      pending: data.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
+      fulfilled: data.filter(o => o.status === 'delivered').length,
+      revenue: data.filter(o => {
+        const d = new Date(o.order_date);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear && o.status !== 'cancelled';
+      }).reduce((sum, o) => sum + (Number(o.net_amount) || 0), 0)
+    };
+  }, [data]);
+
+  const columns = [
+    {
+      key: 'sales_id',
+      label: 'Order ID',
+      render: (val) => <code style={{ fontSize: '13px', fontWeight: 600 }}>ORD-{new Date().getFullYear()}-{val.toString().padStart(3, '0')}</code>
+    },
+    {
+      key: 'customer_name',
+      label: 'Customer',
+      render: (val, row) => (
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--color-text)' }}>{val}</div>
+          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{row.company_name}</div>
+        </div>
+      )
+    },
+    {
+      key: 'items_count',
+      label: 'Products',
+      render: (val, row) => (
+        <span className="items-summary-pill" title="View breakdown in details">
+          {row.items?.length || 1} item{row.items?.length > 1 ? 's' : ''}
+        </span>
+      )
+    },
+    {
+      key: 'order_date',
+      label: 'Order Date',
+      render: (val) => (
+        <span className="relative-date" title={new Date(val).toLocaleDateString()}>
+          {formatRelativeTime(val)}
+        </span>
+      )
+    },
+    {
+      key: 'net_amount',
+      label: 'Amount',
+      render: (val) => (
+        <div style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary)' }}>
+          {formatCurrency(val)}
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (val) => (
+        <span className={`badge badge-order-${val}`}>
+          {val.charAt(0).toUpperCase() + val.slice(1)}
+        </span>
+      )
     }
-  };
+  ];
 
-  const onChange = (key, val) => setForm(f => ({ ...f, [key]: val }));
-
-  const updateItem = (idx, key, val) => {
-    const items = [...(form.items || [])];
-    items[idx] = { ...items[idx], [key]: val };
-    
-    // Auto-calculate total amount based on line items
-    const newTotal = items.reduce((sum, item) => sum + (item.quantity * (Number(item.unit_price) || 0)), 0);
-    setForm(f => ({ ...f, items, total_amount: newTotal }));
-  };
-
-  const addItem = () => {
-    setForm(f => ({ 
-      ...f, 
-      items: [...(f.items || []), { 
-        product_id: '', quantity: 1, unit_price: '', 
-        is_iot_order: false, 
-        iot_config: { 
-          nozzle_count: 1, dispensing_speed: 21, keyboard_format: '4x6', config_notes: '',
-          connectivity: { ethernet: true, wifi: false, gsm_4g: true, gps: true } 
-        } 
-      }] 
-    }));
-  };
-
-  const updateIoTConfig = (idx, key, val) => {
-    const items = [...(form.items || [])];
-    items[idx] = { ...items[idx], iot_config: { ...items[idx].iot_config, [key]: val } };
-    setForm(f => ({ ...f, items }));
-  };
-
-  const updateConnectivity = (idx, key, val) => {
-    const items = [...(form.items || [])];
-    const connectivity = { ...items[idx].iot_config.connectivity, [key]: val };
-    items[idx] = { ...items[idx], iot_config: { ...items[idx].iot_config, connectivity } };
-    setForm(f => ({ ...f, items }));
-  };
+  if (!loading && data.length === 0) {
+    return (
+      <EmptyState 
+        icon={ShoppingCart}
+        title="No sales orders yet"
+        description="Track customer orders, generated quotes, and fulfillment status for IoT dispenser hardware"
+        actionLabel="Create First Order"
+        onAction={openCreate}
+      />
+    );
+  }
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ marginBottom: '24px' }}>
         <div>
           <h1 className="page-title">Sales Orders</h1>
-          <p className="page-subtitle">Manage sales orders and line items</p>
+          <p className="page-subtitle">Track orders, fulfillment status, and revenue</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}><Plus size={16} /> New Order</button>
       </div>
 
-      <DataTable columns={columns} data={data} onView={openView} onEdit={openEdit} onDelete={handleDelete} />
+      <div className="sales-summary-row">
+        <div className="sales-stat-card">
+          <span className="sales-stat-label">Total Orders</span>
+          <span className="sales-stat-value">{stats.total}</span>
+        </div>
+        <div className="sales-stat-card">
+          <span className="sales-stat-label">Pending</span>
+          <span className="sales-stat-value" style={{ color: 'var(--color-warning)' }}>{stats.pending}</span>
+        </div>
+        <div className="sales-stat-card">
+          <span className="sales-stat-label">Fulfilled</span>
+          <span className="sales-stat-value" style={{ color: 'var(--color-success)' }}>{stats.fulfilled}</span>
+        </div>
+        <div className="sales-stat-card">
+          <span className="sales-stat-label">Monthly Revenue</span>
+          <span className="sales-stat-value" style={{ color: 'var(--color-primary)' }}>{formatCurrency(stats.revenue)}</span>
+        </div>
+      </div>
 
-      {/* View Modal */}
-      <Modal isOpen={viewModal} onClose={() => setViewModal(false)} title="Order Details" width="640px">
-        {viewData && (
-          <div>
-            <div className="form-grid" style={{ marginBottom: 20 }}>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Customer</span><br /><strong>{viewData.customer_name}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>PO Number</span><br /><strong>{viewData.po_number}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Order Date</span><br /><strong>{new Date(viewData.order_date).toLocaleDateString('en-IN')}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Status</span><br /><span className={`badge badge-${viewData.status}`}>{viewData.status}</span></div>
-            </div>
-            
-            <div className="form-grid" style={{ marginBottom: 20, padding: 12, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Total</span><br /><strong>₹{Number(viewData.total_amount).toLocaleString('en-IN')}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Tax</span><br /><strong>₹{Number(viewData.tax_amount).toLocaleString('en-IN')}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Discount</span><br /><strong>₹{Number(viewData.discount_amount).toLocaleString('en-IN')}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Net Amount</span><br /><strong style={{ color: 'var(--accent-blue-light)' }}>₹{Number(viewData.net_amount).toLocaleString('en-IN')}</strong></div>
-            </div>
-            {viewData.remarks && <p style={{ color: 'var(--text-secondary)', marginBottom: 16, fontSize: '0.85rem' }}>Remarks: {viewData.remarks}</p>}
-            {viewData.items?.length > 0 && (
-              <div>
-                <h4 style={{ marginBottom: 8, fontSize: '0.9rem' }}>Line Items</h4>
-                <table className="data-table" style={{ width: '100%' }}>
-                  <thead><tr><th>Product</th><th>Model</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
-                  <tbody>
-                    {viewData.items.map(item => (
-                      <tr key={item.item_id}>
-                        <td>{item.product_name}</td>
-                        <td>{item.model_name}</td>
-                        <td>{item.quantity}</td>
-                        <td>₹{Number(item.unit_price).toLocaleString('en-IN')}</td>
-                        <td>₹{(item.quantity * item.unit_price).toLocaleString('en-IN')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+      <div className="filter-bar">
+        <div className="filter-left">
+          <div className="search-container">
+            <Search className="search-icon" size={16} />
+            <input 
+              type="text" 
+              className="search-input" 
+              placeholder="Search by order ID, customer, PO…" 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="filter-chips">
+            <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="All">Status: All</option>
+              <option value="draft">Draft</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div className="record-count">{filteredData.length} orders</div>
+      </div>
+
+      <DataTable 
+        columns={columns} 
+        data={filteredData}
+        onRowClick={(row) => openDetails(row)}
+        actions={(row) => (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn-icon" title="View Details" onClick={(e) => { e.stopPropagation(); openDetails(row); }}>
+              <ExternalLink size={16} />
+            </button>
+            <button className="btn-icon" title="Edit Order" onClick={(e) => { e.stopPropagation(); setForm(row); setEditing(row.sales_id); setModal(true); }}>
+              <Edit2 size={16} />
+            </button>
           </div>
         )}
-      </Modal>
+      />
 
-      {/* Create/Edit Modal */}
-      <Modal isOpen={modal} onClose={() => setModal(false)} title={editing ? 'Edit Order' : 'New Sales Order'} width="640px" error={error}
+      <SlideOver
+        isOpen={isSlideOverOpen}
+        onClose={() => setIsSlideOverOpen(false)}
+        title="Order Fulfillment Details"
+        width="720px"
+        footer={
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button className="btn btn-secondary">
+              <Printer size={14} style={{ marginRight: '8px' }} /> Print Invoice
+            </button>
+            <button className="btn btn-secondary">
+              <FileText size={14} style={{ marginRight: '8px' }} /> Export PDF
+            </button>
+            {selectedOrder?.status !== 'delivered' && selectedOrder?.status !== 'cancelled' && (
+              <button className="btn btn-primary" style={{ marginLeft: 'auto' }}>
+                Mark as Delivered
+              </button>
+            )}
+          </div>
+        }
+      >
+        {selectedOrder && (
+          <div className="order-detail-grid">
+            <div className="detail-section">
+              <div className="detail-section-title">Customer Information</div>
+              <div className="linked-item">
+                <Building2 size={20} color="#0f4c81" />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{selectedOrder.customer_name}</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>{selectedOrder.company_name}</div>
+                </div>
+                <Link to="/customers" className="btn-icon"><ExternalLink size={16} /></Link>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <div className="detail-section-title">Order Lifecycle</div>
+              <div className="order-timeline">
+                <div className={`timeline-event ${['confirmed', 'shipped', 'delivered'].includes(selectedOrder.status) ? 'completed' : ''}`}>
+                  <div className="timeline-dot"></div>
+                  <span className="timeline-label">Order Created</span>
+                  <span className="timeline-time">{new Date(selectedOrder.created_at).toLocaleString()}</span>
+                </div>
+                <div className={`timeline-event ${['shipped', 'delivered'].includes(selectedOrder.status) ? 'completed' : ''}`}>
+                  <div className="timeline-dot"></div>
+                  <span className="timeline-label">Order Confirmed</span>
+                  <span className="timeline-time">Validated by Sales Team</span>
+                </div>
+                <div className={`timeline-event ${selectedOrder.status === 'delivered' ? 'completed' : ''}`}>
+                  <div className="timeline-dot"></div>
+                  <span className="timeline-label">Out for Delivery</span>
+                  <span className="timeline-time">Hardware leaves facility</span>
+                </div>
+                <div className={`timeline-event ${selectedOrder.status === 'delivered' ? 'completed' : ''}`}>
+                  <div className="timeline-dot"></div>
+                  <span className="timeline-label">Delivered & Verified</span>
+                  <span className="timeline-time">{selectedOrder.status === 'delivered' ? 'Completed' : 'Pending'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <div className="detail-section-title">Line Items</div>
+              <table className="data-table" style={{ width: '100%', fontSize: '13px' }}>
+                <thead>
+                  <tr>
+                    <th>Product / Hardware</th>
+                    <th style={{ textAlign: 'center' }}>Qty</th>
+                    <th style={{ textAlign: 'right' }}>Unit Price</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedOrder.items || []).map((item, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{item.product_name}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>{item.model_name}</div>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>{item.quantity}</td>
+                      <td style={{ textAlign: 'right' }}>{formatCurrency(item.unit_price)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(item.quantity * item.unit_price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="3" style={{ textAlign: 'right', border: 'none', padding: '12px 8px 4px' }}>Subtotal</td>
+                    <td style={{ textAlign: 'right', border: 'none', padding: '12px 8px 4px' }}>{formatCurrency(selectedOrder.total_amount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ textAlign: 'right', border: 'none', padding: '4px 8px' }}>Tax (GST)</td>
+                    <td style={{ textAlign: 'right', border: 'none', padding: '4px 8px' }}>{formatCurrency(selectedOrder.tax_amount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ textAlign: 'right', border: 'none', padding: '4px 8px' }}>Discount</td>
+                    <td style={{ textAlign: 'right', border: 'none', padding: '4px 8px', color: '#ef4444' }}>-{formatCurrency(selectedOrder.discount_amount)}</td>
+                  </tr>
+                  <tr style={{ fontSize: '15px', fontWeight: 700 }}>
+                    <td colSpan="3" style={{ textAlign: 'right', border: 'none', padding: '12px 8px' }}>Net Amount</td>
+                    <td style={{ textAlign: 'right', border: 'none', padding: '12px 8px', color: 'var(--color-primary)' }}>{formatCurrency(selectedOrder.net_amount)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+      </SlideOver>
+
+      <Modal isOpen={modal} onClose={() => setModal(false)} title={editing ? 'Edit Sales Order' : 'New Sales Order'} width="640px" error={error}
         footer={<>
           <button className="btn btn-secondary" onClick={() => setModal(false)}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit}>{editing ? 'Update' : 'Create'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit}>{editing ? 'Update' : 'Create Order'}</button>
         </>}
       >
         <div className="form-grid">
           <div className="form-group">
             <label className="form-label">Customer *</label>
-            <select className="form-select" value={form.customer_id} onChange={e => onChange('customer_id', e.target.value)} required>
+            <select className="form-select" value={form.customer_id} onChange={e => setForm({...form, customer_id: e.target.value})} required>
               <option value="">Select Customer</option>
               {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.customer_name}</option>)}
             </select>
           </div>
           <div className="form-group">
             <label className="form-label">Order Date *</label>
-            <input className="form-input" type="date" value={form.order_date} onChange={e => onChange('order_date', e.target.value)} required />
+            <input className="form-input" type="date" value={form.order_date} onChange={e => setForm({...form, order_date: e.target.value})} required />
           </div>
           <div className="form-group">
             <label className="form-label">PO Number</label>
-            <input className="form-input" value={form.po_number} onChange={e => onChange('po_number', e.target.value)} />
+            <input className="form-input" value={form.po_number} onChange={e => setForm({...form, po_number: e.target.value})} />
           </div>
           <div className="form-group">
             <label className="form-label">Status</label>
-            <select className="form-select" value={form.status} onChange={e => onChange('status', e.target.value)}>
-              <option value="pending">Pending</option>
+            <select className="form-select" value={form.status} onChange={e => setForm({...form, status: e.target.value})}>
+              <option value="draft">Draft</option>
               <option value="confirmed">Confirmed</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
-          <div className="form-group full-width">
-            <label className="form-label">Remarks</label>
-            <textarea className="form-textarea" value={form.remarks || ''} onChange={e => onChange('remarks', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Total Amount (Auto)</label>
-            <input className="form-input" type="number" value={form.total_amount} readOnly style={{ background: 'rgba(255,255,255,0.05)' }} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Tax Amount</label>
-            <input className="form-input" type="number" value={form.tax_amount} onChange={e => onChange('tax_amount', Number(e.target.value))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Discount Amount</label>
-            <input className="form-input" type="number" value={form.discount_amount} onChange={e => onChange('discount_amount', Number(e.target.value))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Net Total</label>
-            <input className="form-input" type="number" value={form.total_amount + (Number(form.tax_amount) || 0) - (Number(form.discount_amount) || 0)} readOnly style={{ color: 'var(--accent-blue-light)', fontWeight: 'bold' }} />
-          </div>
         </div>
-
-        {!editing && (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <h4 style={{ fontSize: '0.9rem' }}>Line Items</h4>
-              <button className="btn btn-secondary btn-sm" onClick={addItem}><Plus size={14} /> Add Item</button>
-            </div>
-            {(form.items || []).map((item, idx) => (
-              <div key={idx} style={{ marginBottom: 20, padding: 16, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid var(--border-color)' }}>
-                <div className="form-grid" style={{ marginBottom: 12 }}>
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Product Assembly</label>
-                    <select className="form-select" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
-                      <option value="">Select Assembly</option>
-                      {products.map(p => <option key={p.product_id} value={p.product_id}>{p.product_name} ({p.production_serial_no})</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Qty</label>
-                    <input className="form-input" type="number" min="1" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseInt(e.target.value))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Unit Price (₹)</label>
-                    <input className="form-input" type="number" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 12 }}>
-                  <input type="checkbox" id={`iot_${idx}`} checked={item.is_iot_order} onChange={e => updateItem(idx, 'is_iot_order', e.target.checked)} />
-                  <label htmlFor={`iot_${idx}`} className="form-label" style={{ marginBottom: 0 }}>IoT Configured Dispenser</label>
-                </div>
-
-                {item.is_iot_order && (
-                  <div style={{ padding: 16, background: 'rgba(0,123,255,0.05)', borderRadius: 8, border: '1px dashed var(--accent-blue)' }}>
-                    <h5 style={{ fontSize: '0.8rem', color: 'var(--accent-blue-light)', marginBottom: 12, textTransform: 'uppercase' }}>IoT Feature Selection</h5>
-                    <div className="form-grid">
-                      <div className="form-group">
-                        <label className="form-label">Nozzles</label>
-                        <select className="form-select" value={item.iot_config.nozzle_count} onChange={e => updateIoTConfig(idx, 'nozzle_count', parseInt(e.target.value))}>
-                          {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} Nozzle</option>)}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Speed (L/min)</label>
-                        <select className="form-select" value={item.iot_config.dispensing_speed} onChange={e => updateIoTConfig(idx, 'dispensing_speed', parseInt(e.target.value))}>
-                          <option value={4}>4 (Standard)</option>
-                          <option value={21}>21 (High Speed)</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Keyboard</label>
-                        <select className="form-select" value={item.iot_config.keyboard_format} onChange={e => updateIoTConfig(idx, 'keyboard_format', e.target.value)}>
-                          <option value="4x6">4x6 Format</option>
-                          <option value="5x5">5x5 Format</option>
-                        </select>
-                      </div>
-                      <div className="form-group full-width">
-                        <label className="form-label">Connectivity Options</label>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                          {['ethernet', 'wifi', 'bluetooth', 'modbus_rs485', 'gsm_2g', 'gsm_4g', 'gps'].map(c => (
-                            <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                              <input type="checkbox" checked={item.iot_config.connectivity[c]} onChange={e => updateConnectivity(idx, c, e.target.checked)} />
-                              {c.replace('_', ' ').toUpperCase()}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </Modal>
     </div>
   );
 }
+

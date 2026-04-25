@@ -80,15 +80,20 @@ export default function Sidebar({ collapsed, onToggle }) {
           );
         })}
       </nav>
+
       <div className="sidebar-footer">
-        <div className="nav-item">
+        <NavLink 
+          to="/settings" 
+          className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+          title="Settings"
+        >
           <Settings className="nav-icon" size={18} />
           <span className="nav-label">Settings</span>
-        </div>
+        </NavLink>
         <div className="nav-item logout" onClick={() => {
           localStorage.removeItem('token');
           window.location.reload();
-        }}>
+        }} title="Logout">
           <LogOut className="nav-icon" size={18} />
           <span className="nav-label">Logout</span>
         </div>
